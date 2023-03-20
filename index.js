@@ -261,11 +261,18 @@ class RenpyCounter {
                 const nx = this.bbRegistry.get(bb.next[0]);
                 if (nx.label !== bb.next[0])
                     throw new Error(`Not matching label: ${nx.label} and ${bb.next[0]}`);
-                if (nx.incoming.size === 1 && nx.label.startsWith('#')) {
-                    debug('concat', bb.label, nx.label);
+                const weld = () => {
                     bb.text.push(...nx.text);
                     bb.next = nx.next;
+                    this.forEachNext(bb, (nnx) => {
+                        nnx.incoming.delete(nx.label);
+                        nnx.incoming.add(bb.label);
+                    });
                     queue.push(bb);
+                }
+                if (nx.incoming.size === 1 && nx.label.startsWith('#')) {
+                    debug('concat', bb.label, nx.label);
+                    weld();
                     continue;
                 }
                 if (nx.incoming.size === 1 && bb.label.startsWith('#')) {
@@ -275,9 +282,7 @@ class RenpyCounter {
                         pv.next = pv.next.map((n) => n === bb.label ? nx.label : n);
                     }
                     bb.label = nx.label;
-                    bb.text.push(...nx.text);
-                    bb.next = nx.next;
-                    queue.push(bb);
+                    weld();
                     continue;
                 }
             }
