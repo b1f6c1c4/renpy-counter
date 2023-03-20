@@ -88,4 +88,44 @@ menu:
 d "done"
 `)).toEqual(4);
     });
-})
+    test('weird2', () => {
+        expect(bbSize(`
+a "hello"
+menu:
+    "choice1" if a:
+        label qq:
+        b "world"
+    "choice1" if b:
+        c "world"
+d "done"
+`)).toEqual(4);
+    });
+    test('nested', () => {
+        expect(bbSize(`
+a "hello" #1
+menu:
+    "choice1" if a:
+        #2fake
+        menu:
+            "cho": #3
+                "kk"
+            "choo": #4
+                "gg"
+        #5fake
+    "choice1" if b:
+        c "world" #6
+d "done" #7
+`)).toEqual(7);
+    });
+});
+
+describe('if', () => {
+    test('simple', () => {
+        expect(bbSize(`
+a "hello"
+if kk:
+    b "hello"
+c "world"
+`)).toEqual(3);
+    });
+});
