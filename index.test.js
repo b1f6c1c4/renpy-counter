@@ -1,7 +1,14 @@
 const RenpyCounter = require('./index.js');
 
+const simpleParser = (t) => {
+    const w = t.split(' ');
+    return w[w.length - 1].length - 2;
+};
+const simpleAggregator = (tx) => {
+    return tx.reduce((a, b) => a + b, 0);
+};
 const parse = (verse) => {
-    const counter = new RenpyCounter();
+    const counter = new RenpyCounter(simpleParser, simpleAggregator);
     verse.split('\n').forEach((line, id) => {
         counter.parseLine(line, id);
     });

@@ -23,7 +23,9 @@ class BasicBlock {
 }
 
 class RenpyCounter {
-    constructor() {
+    constructor(par, agg) {
+        this.textParser = par;
+        this.textAggregator = agg;
         this.stack = [];
         this.bbRegistry = new Map();
         this.init = {
@@ -78,7 +80,7 @@ class RenpyCounter {
     push({cmd, arg}, id) {
         const obj = {
             active: true,
-            label: `#bb${id}push`,
+            label: `#bb_${id}_push`,
         };
         switch (cmd) {
             case 'label':
@@ -96,7 +98,7 @@ class RenpyCounter {
                 break;
             case 'if':
                 this.ensureNoParallel(id);
-                const label = `#bb${id}pushIf`;
+                const label = `#bb_${id}_pushIf`;
                 this.top().bb.jump(label, true);
                 this.stack.push({
                     active: false,
@@ -131,7 +133,7 @@ class RenpyCounter {
     }
 
     pop(id, it) {
-        const lbl = `#bb${id}pop${it}`;
+        const lbl = `#bb_${id}_pop${it}`;
         switch (this.top().forking) {
             case undefined: {
                 if (this.top().collectibles) {
@@ -161,18 +163,6 @@ class RenpyCounter {
                 break;
             }
         }
-    }
-
-    say({nm, str}) {
-        const st = str.replace(/\{[^{][^}]*\}|\[[^[][^]]*\]/g, '');
-        debug('say', nm, st);
-        this.bb().say({nm, str: st});
-    }
-
-    jump({lbl}) {
-        const tgt = lbl.startsWith('.') ? this.scope() + lbl : lbl;
-        debug('jump', tgt);
-        this.top().bb.jump(tgt, true);
     }
 
     parseLine(line0, id) {
@@ -213,19 +203,24 @@ class RenpyCounter {
             return;
         }
         this.ensureNoParallel(id);
-        m = line.match(/^(?:(?<nm>[a-zA-Z0-9_]+)\s+)?"(?<str>(?:[^"]|\\")*)"\s*(?:#.*)?$/);
-        if (m) {
-            this.say(m.groups);
-            return;
-        }
         m = line.match(/^jump\s+(?<lbl>\S+)\s*(?:#.*)?$/);
         if (m) {
-            this.jump(m.groups);
+            const {lbl} = m.groups;
+            const tgt = lbl.startsWith('.') ? this.scope() + lbl : lbl;
+            debug('jump', tgt);
+            this.top().bb.jump(tgt, true);
+            return;
         }
         m = line.match(/^return\s+(?<lbl>\S+)\s*(?:#.*)?$/);
         if (m) {
             this.top().bb.next = [];
             this.top().bb.disabled = true;
+            return;
+        }
+        const obj = this.textParser(line);
+        if (obj) {
+            debug('text-like', obj);
+            this.bb().say(obj);
         }
     }
 
@@ -247,9 +242,10 @@ class RenpyCounter {
         }
     }
 
-    optimize(ncjkSpeed = 1, cjkSpeed = 1) {
+    optimize() {
         this.ensureNoParallel('Inf');
 
+        debug('optimize: before =', this.bbRegistry.size);
         const queue = [this.bbRegistry.get('')];
         while (queue.length) {
             const [bb] = queue.splice(0, 1);
@@ -314,16 +310,21 @@ class RenpyCounter {
         }
 
         this.bbRegistry = newRegistry;
+        debug('optimize: after =', this.bbRegistry.size);
         queue.splice(0, queue.length, this.bbRegistry.get(''));
         while (queue.length) {
             const [bb] = queue.splice(0, 1);
-            bb.totalText = 0;
-            bb.text.forEach(({nm, str}) => {
-                const cjkRe = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g;
-                const cjk = (str.match(cjkRe) || []).length;
-                const ncjk = str.length - cjk;
-                bb.totalText += ncjk / cjkSpeed + cjk / cjkSpeed;
-            });
+            bb.totalTextAgg = this.textAggregator(bb.text);
+            debug('optimize totalTextAgg=', bb.totalTextAgg);
+            if (Array.isArray(bb.totalTextAgg)) {
+                bb.totalText = bb.totalTextAgg[0];
+            } else {
+                bb.totalText = bb.totalTextAgg;
+            }
+            if (!isFinite(bb.totalText)) {
+                debug('optimize totalText=', bb.totalText);
+                throw new Error('Invalid aggregator return');
+            }
             this.forEachNext(bb, (nx) => {
                 if (!nx.incoming.has(bb.label)) {
                     nx.incoming.add(bb.label)
@@ -335,6 +336,7 @@ class RenpyCounter {
 
     // get min totalChar from '' to return
     spfa() {
+        debug('spfa on ', this.bbRegistry.size);
         let answer = Infinity;
         let answerHop = undefined;
         const bb0 = this.bbRegistry.get('');
@@ -361,16 +363,17 @@ class RenpyCounter {
                 }
             });
         }
+        debug('spfa done');
         const hops = [];
         if (answerHop !== undefined)
             for (let ptr = answerHop; ptr; ptr = ptr.spfa_hop)
-                if (ptr.totalText)
-                    hops.splice(0, 0, {[ptr.label]: ptr.totalText});
+                hops.splice(0, 0, ptr);
         return [answer, hops];
     }
 
     // get max totalChar from '' to return
     kosaraju() {
+        debug('kosaraju on ', this.bbRegistry.size);
         const Return = Symbol('return');
         const sccs = []; // { bbs, incoming, next }
         const s = [];
@@ -417,6 +420,7 @@ class RenpyCounter {
                 }
             }
         }
+        debug('korasaju done');
 
         let answer = -Infinity;
         let answerHop = undefined;
@@ -450,9 +454,7 @@ class RenpyCounter {
         const hops = [];
         if (answerHop !== undefined)
             for (let ptr = answerHop; ptr; ptr = ptr.spfa_hop)
-                if (ptr.totalText)
-                    hops.splice(0, 0,
-                        ptr.bbs.map((bb) => ({[bb.label]: bb.totalText})));
+                hops.splice(0, 0, ptr);
         return [answer, hops];
     }
 
