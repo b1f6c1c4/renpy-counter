@@ -82,6 +82,7 @@ class RenpyCounter {
         };
         switch (cmd) {
             case 'label':
+                this.ensureNoParallel(id);
                 obj.label = arg.replace(/\(.*\)/, '');
                 if (!obj.label.startsWith('.'))
                     this.top().scope = obj.label;
@@ -89,10 +90,12 @@ class RenpyCounter {
                     obj.label = this.scope() + obj.label;
                 break;
             case 'menu':
+                this.ensureNoParallel(id);
                 obj.forking = 'regular';
                 obj.collectibles = [];
                 break;
             case 'if':
+                this.ensureNoParallel(id);
                 const label = `#bb${id}pushIf`;
                 this.top().bb.jump(label, true);
                 this.stack.push({
@@ -115,6 +118,7 @@ class RenpyCounter {
                 obj.collectibles = this.top().collectibles;
                 break;
             default:
+                this.ensureNoParallel(id);
                 if (this.top().forking === 'regular')
                     obj.collectibles = this.top().collectibles;
                 break;
@@ -218,6 +222,11 @@ class RenpyCounter {
         if (m) {
             this.jump(m.groups);
         }
+        m = line.match(/^return\s+(?<lbl>\S+)\s*(?:#.*)?$/);
+        if (m) {
+            this.top().bb.next = [];
+            this.top().bb.disabled = true;
+        }
     }
 
     forEachNext(bb, cb) {
@@ -238,7 +247,7 @@ class RenpyCounter {
         }
     }
 
-    optimize() {
+    optimize(ncjkSpeed = 1, cjkSpeed = 1) {
         this.ensureNoParallel('Inf');
 
         const queue = [this.bbRegistry.get('')];
@@ -308,9 +317,12 @@ class RenpyCounter {
         queue.splice(0, queue.length, this.bbRegistry.get(''));
         while (queue.length) {
             const [bb] = queue.splice(0, 1);
-            bb.totalChars = 0;
+            bb.totalText = 0;
             bb.text.forEach(({nm, str}) => {
-                bb.totalChars += str.length;
+                const cjkRe = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g;
+                const cjk = (str.match(cjkRe) || []).length;
+                const ncjk = str.length - cjk;
+                bb.totalText += ncjk / cjkSpeed + cjk / cjkSpeed;
             });
             this.forEachNext(bb, (nx) => {
                 if (!nx.incoming.has(bb.label)) {
@@ -324,6 +336,7 @@ class RenpyCounter {
     // get min totalChar from '' to return
     spfa() {
         let answer = Infinity;
+        let answerHop = undefined;
         const bb0 = this.bbRegistry.get('');
         bb0.spfa_dist = 0;
         const queue = [bb0];
@@ -331,21 +344,29 @@ class RenpyCounter {
             const [bb] = queue.splice(0, 1);
             bb.spfa_in_queue = false;
             const du0 = bb.spfa_dist === undefined ? Infinity : bb.spfa_dist;
-            const du = du0 + bb.totalChars;
-            if (!bb.next.length && answer > du + 0)
+            const du = du0 + bb.totalText;
+            if (!bb.next.length && answer > du + 0) {
                 answer = du + 0;
+                answerHop = bb;
+            }
             this.forEachNext(bb, (nx) => {
                 const dv = nx.spfa_dist === undefined ? Infinity : nx.spfa_dist;
                 if (dv <= du + 0)
                     return;
                 nx.spfa_dist = du + 0;
+                nx.spfa_hop = bb;
                 if (!nx.spfa_in_queue) {
                     queue.push(nx);
                     nx.spfa_in_queue = true;
                 }
             });
         }
-        return answer;
+        const hops = [];
+        if (answerHop !== undefined)
+            for (let ptr = answerHop; ptr; ptr = ptr.spfa_hop)
+                if (ptr.totalText)
+                    hops.splice(0, 0, {[ptr.label]: ptr.totalText});
+        return [answer, hops];
     }
 
     // get max totalChar from '' to return
@@ -378,10 +399,10 @@ class RenpyCounter {
             // scc.incoming = new Set();
             scc.next = new Set();
             // scc.characters = new Set();
-            scc.totalChars = 0;
+            scc.totalText = 0;
             for (const bb of scc.bbs) {
                 delete bb.kosaraju_seen;
-                scc.totalChars += bb.totalChars;
+                scc.totalText += bb.totalText;
                 // this.forEachPrev(bb, (nx) => {
                 //     if (nx.kosaraju_scc !== scc)
                 //         scc.incoming.add(nx.kosaraju_scc);
@@ -398,6 +419,7 @@ class RenpyCounter {
         }
 
         let answer = -Infinity;
+        let answerHop = undefined;
         const scc0 = this.bbRegistry.get('').kosaraju_scc;
         scc0.spfa_dist = 0;
         const queue = [scc0];
@@ -405,28 +427,37 @@ class RenpyCounter {
             const [scc] = queue.splice(0, 1);
             scc.spfa_in_queue = false;
             const du0 = scc.spfa_dist === undefined ? -Infinity : scc.spfa_dist;
-            const du = du0 + scc.totalChars;
+            const du = du0 + scc.totalText;
             for (const nx of scc.next) {
                 if (nx === Return) {
-                    if (answer < du + 0)
+                    if (answer < du + 0) {
                         answer = du + 0;
+                        answerHop = scc;
+                    }
                     continue;
                 }
                 const dv = nx.spfa_dist === undefined ? -Infinity : nx.spfa_dist;
                 if (dv >= du + 0)
                     continue;
                 nx.spfa_dist = du + 0;
+                nx.spfa_hop = scc;
                 if (!nx.spfa_in_queue) {
                     queue.push(nx);
                     nx.spfa_in_queue = true;
                 }
             }
         }
-        return answer;
+        const hops = [];
+        if (answerHop !== undefined)
+            for (let ptr = answerHop; ptr; ptr = ptr.spfa_hop)
+                if (ptr.totalText)
+                    hops.splice(0, 0,
+                        ptr.bbs.map((bb) => ({[bb.label]: bb.totalText})));
+        return [answer, hops];
     }
 
     analyze() {
-        return [this.spfa(), this.kosaraju()];
+        return [this.spfa()[0], this.kosaraju()[0]];
     }
 }
 

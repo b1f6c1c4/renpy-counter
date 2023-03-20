@@ -216,7 +216,7 @@ label .x:
     });
 });
 
-describe('jump', () => {
+describe('forceful', () => {
     test('jump', () => {
         expect(bbSize(`
 "a"
@@ -225,6 +225,15 @@ label tst:
 label .x:
     "a"
 `)).toEqual(3);
+    });
+    test('return', () => {
+        expect(bbSize(`
+"a"
+label tst:
+    return .x
+label .x:
+    "a"
+`)).toEqual(2);
     });
 });
 
@@ -243,6 +252,21 @@ if xx:
     "abe"
 "abde"
 `)).toEqual([6, 9]);
+    });
+    test('if-else', () => {
+        expect(anal(`
+label sh:
+    "ae"
+    if xx:
+        "abe"
+    else:
+        "abecadsf"
+    if xx:
+        "abe"
+    else:
+        "af"
+    "abde"
+`)).toEqual([11, 17]);
     });
     test('loop', () => {
         expect(anal(`
