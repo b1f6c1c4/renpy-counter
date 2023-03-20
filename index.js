@@ -397,19 +397,22 @@ class RenpyCounter {
             }
         }
 
-        let answer = Infinity;
+        let answer = -Infinity;
         const scc0 = this.bbRegistry.get('').kosaraju_scc;
         scc0.spfa_dist = 0;
         const queue = [scc0];
         while (queue.length) {
             const [scc] = queue.splice(0, 1);
             scc.spfa_in_queue = false;
-            const du0 = scc.spfa_dist === undefined ? Infinity : scc.spfa_dist;
+            const du0 = scc.spfa_dist === undefined ? -Infinity : scc.spfa_dist;
             const du = du0 + scc.totalChars;
-            if (!scc.next.length && answer > du + 0)
-                answer = du + 0;
             for (const nx of scc.next) {
-                const dv = nx.spfa_dist === undefined ? Infinity : nx.spfa_dist;
+                if (nx === Return) {
+                    if (answer < du + 0)
+                        answer = du + 0;
+                    continue;
+                }
+                const dv = nx.spfa_dist === undefined ? -Infinity : nx.spfa_dist;
                 if (dv >= du + 0)
                     continue;
                 nx.spfa_dist = du + 0;

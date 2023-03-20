@@ -235,5 +235,28 @@ describe('analyze', () => {
 "abe"
 "abde"
 `)).toEqual([9, 9]);
-    })
+    });
+    test('if', () => {
+        expect(anal(`
+"ae"
+if xx:
+    "abe"
+"abde"
+`)).toEqual([6, 9]);
+    });
+    test('loop', () => {
+        expect(anal(`
+"ae"
+label again:
+menu:
+    "choice 1":
+        "ae"
+    "choice 2":
+        "xxx"
+        jump again
+    "choice 3":
+        "xxx"
+"abde"
+`)).toEqual([8, 12]);
+    });
 });
