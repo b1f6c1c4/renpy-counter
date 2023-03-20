@@ -7,6 +7,7 @@ const parse = (verse) => {
     });
     return counter;
 };
+const failing = (verse) => () => parse(verse);
 const bbSize = (verse) => {
     const counter = parse(verse);
     counter.optimize();
@@ -14,7 +15,6 @@ const bbSize = (verse) => {
 }
 
 describe('indent', () => {
-    const failing = (verse) => () => parse(verse);
     test('init', () => {
         expect(failing(`
   a "hello"
@@ -188,5 +188,37 @@ else:
     k "xx" #5
 d "world" #6
 `)).toEqual(6);
+    });
+});
+
+describe('label', () => {
+    test('no-scope-label', () => {
+        expect(failing(`
+label .x:
+`)).toThrow();
+    });
+    test('no-scope-jump', () => {
+        expect(failing(`
+jump .x
+`)).toThrow();
+    });
+    test('dup', () => {
+        expect(failing(`
+label tst:
+    label .x:
+label .x:
+`)).toThrow();
+    });
+});
+
+describe('jump', () => {
+    test('jump', () => {
+        expect(bbSize(`
+"a"
+label tst:
+    jump .x
+label .x:
+    "a"
+`)).toEqual(3);
     });
 });

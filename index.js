@@ -48,6 +48,15 @@ class RenpyCounter {
         return this.stack[this.stack.length - 1];
     }
 
+    scope() {
+        for (let i = this.stack.length - 1; i >= 0; i--)
+            if (this.stack[i].scope)
+                return this.stack[i].scope;
+        if (this.init.scope)
+            return this.init.scope;
+        throw new Error("No scope available.");
+    }
+
     bb(obj) {
         if (obj) {
             const old = this.top().bb;
@@ -73,7 +82,11 @@ class RenpyCounter {
         };
         switch (cmd) {
             case 'label':
-                obj.label = arg;
+                obj.label = arg.replace(/\(.*\)/, '');
+                if (!obj.label.startsWith('.'))
+                    this.top().scope = obj.label;
+                else
+                    obj.label = this.scope() + obj.label;
                 break;
             case 'menu':
                 obj.forking = 'regular';
@@ -153,8 +166,9 @@ class RenpyCounter {
     }
 
     jump({lbl}) {
-        debug('jump', lbl);
-        this.top().bb.jump(lbl, true);
+        const tgt = lbl.startsWith('.') ? this.scope() + lbl : lbl;
+        debug('jump', tgt);
+        this.top().bb.jump(tgt, true);
     }
 
     parseLine(line0, id) {
