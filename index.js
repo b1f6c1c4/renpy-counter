@@ -110,7 +110,7 @@ class RenpyCounter {
                 if (this.top().forking !== 'parallel')
                     throw new Error('Incorrect "else" location');
                 this.top().direct = false;
-                // fallthrough
+            // fallthrough
             case 'elif':
                 obj.collectibles = this.top().collectibles;
                 break;
@@ -220,23 +220,39 @@ class RenpyCounter {
         }
     }
 
+    forEachNext(bb, cb) {
+        for (const nxLbl of bb.next) {
+            const nx = this.bbRegistry.get(nxLbl);
+            if (!nx)
+                throw new Error(`Cannot find label ${nxLbl}`);
+            cb(nx, nxLbl);
+        }
+    }
+
+    forEachPrev(bb, cb) {
+        for (const nxLbl of bb.incoming) {
+            const nx = this.bbRegistry.get(nxLbl);
+            if (!nx)
+                throw new Error(`Cannot find label ${nxLbl}`);
+            cb(nx, nxLbl);
+        }
+    }
+
     optimize() {
         this.ensureNoParallel('Inf');
+
         const queue = [this.bbRegistry.get('')];
-        // mark all
         while (queue.length) {
             const [bb] = queue.splice(0, 1);
-            for (const nxLbl of bb.next) {
-                const nx = this.bbRegistry.get(nxLbl);
-                if (!nx)
-                    throw new Error(`Cannot find label ${nxLbl}`);
+            this.forEachNext(bb, (nx) => {
                 if (!nx.incoming) nx.incoming = new Set();
                 if (!nx.incoming.has(bb.label)) {
                     nx.incoming.add(bb.label)
                     queue.push(nx);
                 }
-            }
+            });
         }
+
         const newRegistry = new Map();
         queue.splice(0, queue.length, this.bbRegistry.get(''));
         while (queue.length) {
@@ -267,19 +283,142 @@ class RenpyCounter {
             }
             bb.opt_marked = true;
             newRegistry.set(bb.label, bb);
-            for (const nxLbl of bb.next) {
-                const nx = this.bbRegistry.get(nxLbl);
-                if (nx.label !== nxLbl)
-                    throw new Error(`Not matching label: ${nx.label} and ${nxLbl}`);
+            this.forEachNext(bb, (nx) => {
                 if (!nx.opt_marked) {
                     nx.opt_marked = true;
                     queue.push(nx);
                 }
+            });
+        }
+
+        for (const bb of newRegistry.values()) {
+            delete bb.opt_marked;
+            if (bb.incoming)
+                bb.incoming.clear();
+            else
+                bb.incoming = new Set();
+        }
+
+        this.bbRegistry = newRegistry;
+        queue.splice(0, queue.length, this.bbRegistry.get(''));
+        while (queue.length) {
+            const [bb] = queue.splice(0, 1);
+            bb.totalChars = 0;
+            bb.text.forEach(({nm, str}) => {
+                bb.totalChars += str.length;
+            });
+            this.forEachNext(bb, (nx) => {
+                if (!nx.incoming.has(bb.label)) {
+                    nx.incoming.add(bb.label)
+                    queue.push(nx);
+                }
+            });
+        }
+    }
+
+    // get min totalChar from '' to return
+    spfa() {
+        let answer = Infinity;
+        const bb0 = this.bbRegistry.get('');
+        bb0.spfa_dist = 0;
+        const queue = [bb0];
+        while (queue.length) {
+            const [bb] = queue.splice(0, 1);
+            bb.spfa_in_queue = false;
+            const du0 = bb.spfa_dist === undefined ? Infinity : bb.spfa_dist;
+            const du = du0 + bb.totalChars;
+            if (!bb.next.length && answer > du + 0)
+                answer = du + 0;
+            this.forEachNext(bb, (nx) => {
+                const dv = nx.spfa_dist === undefined ? Infinity : nx.spfa_dist;
+                if (dv <= du + 0)
+                    return;
+                nx.spfa_dist = du + 0;
+                if (!nx.spfa_in_queue) {
+                    queue.push(nx);
+                    nx.spfa_in_queue = true;
+                }
+            });
+        }
+        return answer;
+    }
+
+    // get max totalChar from '' to return
+    kosaraju() {
+        const Return = Symbol('return');
+        const sccs = []; // { bbs, incoming, next }
+        const s = [];
+        const dfs1 = (bb) => {
+            if (bb.kosaraju_seen)
+                return;
+            bb.kosaraju_seen = true;
+            this.forEachNext(bb, dfs1);
+            s.push(bb);
+        };
+        dfs1(this.bbRegistry.get(''));
+        const dfs2 = (bb) => {
+            if (bb.kosaraju_scc !== undefined)
+                return;
+            bb.kosaraju_scc = sccs[sccs.length - 1];
+            bb.kosaraju_scc.bbs.push(bb);
+            this.forEachPrev(bb, dfs2);
+        };
+        for (let i = s.length - 1; i >= 0; i--) {
+            if (s[i].kosaraju_scc !== undefined)
+                continue;
+            sccs.push({bbs: []});
+            dfs2(s[i]);
+        }
+        for (const scc of sccs) {
+            // scc.incoming = new Set();
+            scc.next = new Set();
+            // scc.characters = new Set();
+            scc.totalChars = 0;
+            for (const bb of scc.bbs) {
+                delete bb.kosaraju_seen;
+                scc.totalChars += bb.totalChars;
+                // this.forEachPrev(bb, (nx) => {
+                //     if (nx.kosaraju_scc !== scc)
+                //         scc.incoming.add(nx.kosaraju_scc);
+                // });
+                if (bb.next.length) {
+                    this.forEachNext(bb, (nx) => {
+                        if (nx.kosaraju_scc !== scc)
+                            scc.next.add(nx.kosaraju_scc);
+                    });
+                } else {
+                    scc.next.add(Return);
+                }
             }
         }
-        for (const bb of newRegistry.values())
-            delete bb.opt_marked;
-        this.bbRegistry = newRegistry;
+
+        let answer = Infinity;
+        const scc0 = this.bbRegistry.get('').kosaraju_scc;
+        scc0.spfa_dist = 0;
+        const queue = [scc0];
+        while (queue.length) {
+            const [scc] = queue.splice(0, 1);
+            scc.spfa_in_queue = false;
+            const du0 = scc.spfa_dist === undefined ? Infinity : scc.spfa_dist;
+            const du = du0 + scc.totalChars;
+            if (!scc.next.length && answer > du + 0)
+                answer = du + 0;
+            for (const nx of scc.next) {
+                const dv = nx.spfa_dist === undefined ? Infinity : nx.spfa_dist;
+                if (dv >= du + 0)
+                    continue;
+                nx.spfa_dist = du + 0;
+                if (!nx.spfa_in_queue) {
+                    queue.push(nx);
+                    nx.spfa_in_queue = true;
+                }
+            }
+        }
+        return answer;
+    }
+
+    analyze() {
+        return [this.spfa(), this.kosaraju()];
     }
 }
 

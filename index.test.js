@@ -13,6 +13,11 @@ const bbSize = (verse) => {
     counter.optimize();
     return counter.bbSize();
 }
+const anal = (verse) => {
+    const counter = parse(verse);
+    counter.optimize();
+    return counter.analyze();
+}
 
 describe('indent', () => {
     test('init', () => {
@@ -221,4 +226,14 @@ label .x:
     "a"
 `)).toEqual(3);
     });
+});
+
+describe('analyze', () => {
+    test('simple', () => {
+        expect(anal(`
+"ae"
+"abe"
+"abde"
+`)).toEqual([9, 9]);
+    })
 });
