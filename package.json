@@ -1,6 +1,6 @@
 {
   "name": "renpy-counter",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Estimate the length of your Ren'Py game (i.e. how long an average player plays your game)",
   "bin": {
     "renpy-counter": "./bin/renpy-counter.js"
