@@ -1,7 +1,4 @@
-import fs from 'node:fs';
-import readline from 'node:readline';
-
-const bbRegistry = {};
+const debug = require('debug')('renpy-counter:core');
 
 class BasicBlock {
     constructor(label) {
@@ -27,6 +24,7 @@ class RenpyCounter {
     constructor() {
         this.stack = [];
         this.initBB = new BasicBlock();
+        this.bbRegistry = {};
     }
 
     top() {
@@ -69,10 +67,10 @@ class RenpyCounter {
             default:
                 break;
         }
-        console.log('implicit jump', this.bb().label, '->', obj.label);
+        debug('implicit jump', this.bb().label, '->', obj.label);
         this.bb().jump(obj.label);
-        obj.bb = bbRegistry[arg] = new BasicBlock(obj.label);
-        console.log('push', obj);
+        obj.bb = this.bbRegistry[arg] = new BasicBlock(obj.label);
+        debug('push', obj);
         this.stack.push(obj);
     }
 
@@ -80,38 +78,38 @@ class RenpyCounter {
         const lbl = `#bb${id}pop${it}`;
         switch (this.top().forking) {
             case undefined: {
-                console.log('implicit jump', this.bb().label, '->', lbl);
+                debug('implicit jump', this.bb().label, '->', lbl);
                 this.bb().jump(lbl);
                 const lvl = this.stack.pop();
-                console.log('pop non-forking', lvl);
-                this.bb(bbRegistry[lbl] = new BasicBlock(lbl));
+                debug('pop non-forking', lvl);
+                this.bb(this.bbRegistry[lbl] = new BasicBlock(lbl));
                 break;
             }
             case 'regular': {
-                console.log('implicit jump', this.bb().label, '->', lbl);
+                debug('implicit jump', this.bb().label, '->', lbl);
                 const lvl = this.stack.pop();
                 // TODO: join the forks
-                console.log('pop regular', lvl);
-                this.bb(bbRegistry[lbl] = new BasicBlock(lbl)).jump(lbl);
+                debug('pop regular', lvl);
+                this.bb(this.bbRegistry[lbl] = new BasicBlock(lbl)).jump(lbl);
                 break;
             }
             case 'parallel': {
-                console.log('implicit jump', this.bb().label, '->', lbl);
+                debug('implicit jump', this.bb().label, '->', lbl);
                 const lvl = this.stack.pop();
-                console.log('pop parallel', lvl);
-                this.bb(bbRegistry[lbl] = new BasicBlock(lbl)).jump(lbl);
+                debug('pop parallel', lvl);
+                this.bb(this.bbRegistry[lbl] = new BasicBlock(lbl)).jump(lbl);
             }
         }
     }
 
     say({ nm, str }) {
         const st = str.replace(/\{[^{][^}]*\}|\[[^[][^]]*\]/g, '');
-        console.log('say', nm, st);
+        debug('say', nm, st);
         this.bb().say({ nm, str: st });
     }
 
     jump({ lbl }) {
-        console.log('jump', lbl);
+        debug('jump', lbl);
         this.top().disabled = true;
         this.top().bb.jump(lbl);
     }
@@ -135,7 +133,7 @@ class RenpyCounter {
                 throw new Error(`Wrong indent, blame pYtHoN: ${id}:${line0}`);
             this.top().active = false;
             this.top().indent = m.groups.indent;
-            console.log('adjust active:', this.top());
+            debug('adjust active:', this.top());
             line = line.substr(m.groups.indent.length);
         } else { // second or more lines after `:`
             let it = 0;
@@ -163,19 +161,4 @@ class RenpyCounter {
     }
 };
 
-const rl = readline.createInterface({
-    input: fs.createReadStream(process.argv[2]),
-    crlfDelay: Infinity,
-});
-
-const counter = new RenpyCounter();
-
-let i = 0;
-for await (let line of rl) {
-    if (line.charCodeAt(0) === 0xFEFF) {
-        line = line.substr(1);
-    }
-    ++i;
-    console.log(`Line from file: ${i}:${line}`);
-    counter.parseLine(line, i);
-}
+module.exports = RenpyCounter

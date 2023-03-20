@@ -4,11 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "author": "b1f6c1c4 <b1f6c1c4@gmail.com>",
   "license": "MIT",
+  "devDependencies": {
+    "jest": "^29.5.0"
+  },
   "dependencies": {
-    "jest-cli": "^29.5.0"
+    "debug": "^4.3.4"
   }
 }
