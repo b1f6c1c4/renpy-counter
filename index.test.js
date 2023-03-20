@@ -13,27 +13,25 @@ const bbSize = (verse) => {
     return counter.bbSize();
 }
 
-describe('parser', () => {
-    describe('indent', () => {
-        const failing = (verse) => () => parse(verse);
-        test('init', () => {
-            expect(failing(`
+describe('indent', () => {
+    const failing = (verse) => () => parse(verse);
+    test('init', () => {
+        expect(failing(`
   a "hello"
 `)).toThrow();
-        });
-        test('not colon', () => {
-            expect(failing(`
+    });
+    test('not colon', () => {
+        expect(failing(`
 a "hello"
   b "world"
 `)).toThrow();
-        });
-        test('not full', () => {
-            expect(failing(`
+    });
+    test('not full', () => {
+        expect(failing(`
 label hello:
   b "world"
  b "world"
 `)).toThrow();
-        });
     });
 });
 
@@ -127,5 +125,68 @@ if kk:
     b "hello"
 c "world"
 `)).toEqual(3);
+    });
+    test('if-else', () => {
+        expect(bbSize(`
+a "hello"
+if kk:
+    b "hello"
+else:
+    c "hello"
+d "world"
+`)).toEqual(4);
+    });
+    test('if-elif-else', () => {
+        expect(bbSize(`
+a "hello"
+if kk:
+    b "hello"
+elif mm:
+    b "hello"
+else:
+    c "hello"
+d "world"
+`)).toEqual(5);
+    });
+    test('nested', () => {
+        expect(bbSize(`
+a "hello" #1
+if kk:
+    b "hello" #2
+else:
+    #3fake
+    if gg:
+        c "hello" #4
+    else:
+        k "xx" #5
+    #6fake
+d "world" #7
+`)).toEqual(7);
+    });
+    test('nested-else', () => {
+        expect(bbSize(`
+a "hello" #1
+if kk:
+    b "hello" #2
+    if gg:
+        c "hello" #3
+    else:
+        k "xx" #4
+    #5fake
+d "world" #6
+`)).toEqual(6);
+    });
+    test('nested-else', () => {
+        expect(bbSize(`
+a "hello" #1
+if kk:
+    b "hello" #2
+    if gg:
+        c "hello" #3
+    #4fake
+else:
+    k "xx" #5
+d "world" #6
+`)).toEqual(6);
     });
 });
