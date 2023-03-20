@@ -6,7 +6,7 @@ const debug = require('debug')('renpy-counter:bin');
 
 const argv = require('yargs')
     .scriptName('renpy-counter')
-    .usage('$0 [options] <files>')
+    .usage('$0 [options] <files>...')
     .option('j', {
         alias: 'json',
         describe: 'output json format',
@@ -71,8 +71,8 @@ const argv = require('yargs')
         describe: 'time (seconds) spend on next',
         type: 'number',
     })
-    .option('p', {
-        alias: 'pause',
+    .option('pause', {
+        default: true,
         describe: 'include paused time',
         type: 'boolean',
     })
@@ -86,6 +86,11 @@ const argv = require('yargs')
         describe: 'list the shortest/longest path by texts',
         type: 'boolean',
     })
+    .option('f', {
+        alias: 'by-file',
+        describe: 'summarize each document individually',
+        type: 'boolean',
+    })
     .help()
     .argv;
 
@@ -95,6 +100,17 @@ const Pause = Symbol('(pause)');
 const Scene = Symbol('(scene)');
 const Show = Symbol('(show)');
 const Narrator = Symbol('(narrator)');
+
+Map.prototype.increment = function (key, value) {
+    if (!this.has(key))
+        this.set(key, value);
+    else
+        this.set(key, this.get(key) + value);
+};
+Map.prototype.mergeMap = function (src) {
+    for (const [k, v] of src.entries())
+        this.increment(k, v);
+};
 
 function parser(line) {
     let m = line.match(/^(?:(?<nm>[a-zA-Z0-9_]+)\s+)?"(?<str>(?:[^"]|\\")*)"\s*(?:#.*)?$/);
@@ -131,23 +147,19 @@ function aggregator(tx) {
     for (const txe of tx) {
         if (txe.pause) {
             time += txe.pause;
-            timeMap.set(Pause, timeMap.get(Pause) + txe.pause);
+            timeMap.increment(Pause, txe.pause);
         } else if (txe.scene) {
             time += argv.scene / 60;
-            timeMap.set(Scene, timeMap.get(Scene) + argv.scene / 60);
+            timeMap.increment(Scene, argv.scene / 60);
         } else if (txe.show) {
             time += argv.show / 60;
-            timeMap.set(Show, timeMap.get(Show) + argv.show / 60);
+            timeMap.increment(Show, argv.show / 60);
         } else if (txe.st) {
             const cjk = (txe.st.match(cjkRe) || []).length;
             const ncjk = txe.st.length - cjk;
             const t = ncjk / argv.speed + cjk / argv['cjk-speed'] + txe.extras / 60 + argv.next / 60;
-            if (argv['by-characters']) {
-                if (!timeMap.has(txe.nm))
-                    timeMap.set(txe.nm, t);
-                else
-                    timeMap.set(txe.nm, timeMap.get(txe.nm) + t);
-            }
+            if (argv['by-characters'])
+                timeMap.increment(txe.nm, t);
             time += t;
         }
     }
@@ -179,11 +191,7 @@ function breakdown([time, path]) {
             return [{lbl: bb.label, txt: getText(bb)}];
     };
     const merge = (bb) => {
-        for (const [k, v] of bb.totalTextAgg[1].entries())
-            if (!res.byCharacters.has(k))
-                res.byCharacters.set(k, v);
-            else
-                res.byCharacters.set(k, res.byCharacters.get(k) + v);
+        res.byCharacters.mergeMap(bb.totalTextAgg[1]);
     };
     for (const obj of path) {
         if (obj.bbs && obj.bbs.length > 1) { // scc
@@ -257,32 +265,35 @@ function present({path, byCharacters}, chalk) {
     }
 }
 
-async function run() {
-    for (const file of argv._) {
-        const rl = readline.createInterface({
-            input: fs.createReadStream(file),
-            crlfDelay: Infinity,
-        });
+async function runFile(file) {
+    const rl = readline.createInterface({
+        input: fs.createReadStream(file),
+        crlfDelay: Infinity,
+    });
+    const counter = new RenpyCounter(parser, aggregator);
+    let i = 0;
+    for await (let line of rl) {
+        if (line.charCodeAt(0) === 0xFEFF) {
+            line = line.substring(1);
+        }
+        ++i;
+        debug(`Line from file: ${i}:${line}`);
+        counter.parseLine(line, i);
+    }
+    counter.optimize();
+    const result = {};
+    if (!argv.maximum) {
+        result.minimum = breakdown(counter.spfa());
+    }
+    if (!argv.minimum) {
+        result.maximum = breakdown(counter.kosaraju());
+    }
+    return result;
+}
 
-        const counter = new RenpyCounter(parser, aggregator);
-        let i = 0;
-        for await (let line of rl) {
-            if (line.charCodeAt(0) === 0xFEFF) {
-                line = line.substring(1);
-            }
-            ++i;
-            debug(`Line from file: ${i}:${line}`);
-            counter.parseLine(line, i);
-        }
-        counter.optimize();
-        const result = {};
-        if (!argv.maximum) {
-            result.minimum = breakdown(counter.spfa());
-        }
-        if (!argv.minimum) {
-            result.maximum = breakdown(counter.kosaraju());
-        }
-        result.config = {
+async function run() {
+    const result = {
+        config: {
             speed: {
                 ncjk: argv.speed,
                 cjk: argv['cjk-speed'],
@@ -293,24 +304,71 @@ async function run() {
                 show: argv.show,
                 next: argv.next,
             },
-        };
-        if (argv.json) {
-            console.log(JSON.stringify(result, replacer, 2));
-        } else {
-            const {Chalk} = await import('chalk');
-            const chalk = new Chalk();
-            console.log(chalk.gray(`Assuming Non-CJK reading time is ${result.config.speed.ncjk} characters per minute.`));
-            console.log(chalk.gray(`Assuming CJK reading time is ${result.config.speed.cjk} characters per minute.`));
-            if (result.minimum) {
-                console.log(chalk.magenta(`Minimum time to play: ${result.minimum.time} min`));
-                await present(result.minimum, chalk);
-            }
-            if (result.maximum) {
-                console.log(chalk.magenta(`Maximum time to play: ${result.maximum.time} min`));
-                await present(result.maximum, chalk);
-            }
+            output: {
+                byFile: argv['by-file'],
+                byCharacters: argv['by-characters'],
+                labels: argv.labels,
+                texts: argv.texts,
+            },
+        },
+    };
+    {
+        if (!argv.maximum) {
+            result.minimum = {time: 0};
+            if (argv.labels || argv.texts)
+                result.minimum.path = [];
+            if (argv['by-characters'])
+                result.minimum.byCharacters = new Map();
+        }
+        if (!argv.minimum) {
+            result.maximum = {time: 0};
+            if (argv.labels || argv.texts)
+                result.maximum.path = [];
+            if (argv['by-characters'])
+                result.maximum.byCharacters = new Map();
         }
     }
+    const merge = ({time, path, byCharacters}, dst) => {
+        dst.time += time;
+        if (argv.labels || argv.texts)
+            dst.path.push(...path);
+        if (argv['by-characters'])
+            dst.byCharacters.mergeMap(byCharacters);
+    };
+
+    const {Chalk} = await import('chalk');
+    const chalk = new Chalk();
+    if (!argv.json) {
+        console.log(chalk.gray(`Assuming Non-CJK reading time is ${result.config.speed.ncjk} characters per minute.`));
+        console.log(chalk.gray(`Assuming CJK reading time is ${result.config.speed.cjk} characters per minute.`));
+    }
+    const show = async (res) => {
+        if (res.minimum) {
+            console.log(chalk.magenta(`Minimum time to play: ${res.minimum.time} min`));
+            await present(res.minimum, chalk);
+        }
+        if (res.maximum) {
+            console.log(chalk.magenta(`Maximum time to play: ${res.maximum.time} min`));
+            await present(res.maximum, chalk);
+        }
+    };
+    for (const file of argv._) {
+        const res = await runFile(file);
+        if (argv['by-file']) {
+            result[file] = res;
+            if (!argv.json) {
+                console.log(chalk.bgMagenta(file));
+                await show(res);
+            }
+        } else {
+            merge(res.minimum, result.minimum);
+            merge(res.maximum, result.maximum);
+        }
+    }
+    if (argv.json)
+        console.log(JSON.stringify(result, replacer, 2));
+    else if (!argv['by-file'])
+        await show(result);
 }
 
 run();
