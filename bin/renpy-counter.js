@@ -46,13 +46,13 @@ const argv = require('yargs')
     })
     .option('s', {
         alias: 'speed',
-        default: 582.9,
+        default: 800,
         describe: 'non-CJK reading speed (characters per minutes)',
         type: 'number',
     })
     .option('S', {
         alias: 'cjk-speed',
-        default: 110.0,
+        default: 300,
         describe: 'CJK reading speed (characters per minutes)',
         type: 'number',
     })
