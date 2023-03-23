@@ -301,7 +301,9 @@ menu:
         "xxx"
         jump again
     "choice 3":
-        return False # deadend
+        menu:
+            "coerce":
+                return False # deadend
 "abde"
 `)).toEqual([8, 11]);
     });

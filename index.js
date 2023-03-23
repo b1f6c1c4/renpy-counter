@@ -275,6 +275,7 @@ class RenpyCounter {
                 const weld = () => {
                     bb.text.push(...nx.text);
                     bb.next = nx.next;
+                    bb.deadend = nx.deadend;
                     this.forEachNext(bb, (nnx) => {
                         nnx.incoming.delete(nx.label);
                         nnx.incoming.add(bb.label);

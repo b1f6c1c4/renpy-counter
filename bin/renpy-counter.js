@@ -116,7 +116,8 @@ function parser(line) {
     let m = line.match(/^(?:(?<nm>[a-zA-Z0-9_]+)\s+)?"(?<str>(?:[^"]|\\")*)"\s*(?:#.*)?$/);
     if (m) {
         let extras = 0;
-        const st = m.groups.str.replace(/\{[^{][^}]*\}|\[[^[][^]]*\]/g, (match) => {
+        let st = m.groups.str.replace(/^(?:.*\{fast\})+/, '');
+        st = st.replace(/\{[^{][^}]*\}|\[[^[][^]]*\]/g, (match) => {
             if (match.startsWith('{w='))
                 extras += +match.substring(3, match.length - 2) / 60;
             return '';
