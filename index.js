@@ -11,6 +11,13 @@ class BasicBlock {
         this.text.push(obj);
     }
 
+    end(dead) {
+        if (this.disabled)
+            return;
+        this.disabled = true;
+        this.deadend = dead;
+    }
+
     jump(lbl, force) {
         if (lbl === this.label)
             throw new Error('Do not jump yourself');
@@ -211,10 +218,9 @@ class RenpyCounter {
             this.top().bb.jump(tgt, true);
             return;
         }
-        m = line.match(/^return\s+(?<lbl>\S+)\s*(?:#.*)?$/);
+        m = line.match(/^return[^#]*(?<dead>#.*dead.*)?$/);
         if (m) {
-            this.top().bb.next = [];
-            this.top().bb.disabled = true;
+            this.top().bb.end(m.groups.dead);
             return;
         }
         const obj = this.textParser(line);
@@ -347,7 +353,7 @@ class RenpyCounter {
             bb.spfa_in_queue = false;
             const du0 = bb.spfa_dist === undefined ? Infinity : bb.spfa_dist;
             const du = du0 + bb.totalText;
-            if (!bb.next.length && answer > du + 0) {
+            if (!bb.next.length && !bb.deadend && answer > du + 0) {
                 answer = du + 0;
                 answerHop = bb;
             }
@@ -415,7 +421,7 @@ class RenpyCounter {
                         if (nx.kosaraju_scc !== scc)
                             scc.next.add(nx.kosaraju_scc);
                     });
-                } else {
+                } else if (!bb.deadend) {
                     scc.next.add(Return);
                 }
             }

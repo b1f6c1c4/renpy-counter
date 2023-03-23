@@ -290,4 +290,19 @@ menu:
 "abde"
 `)).toEqual([8, 12]);
     });
+    test('deadend', () => {
+        expect(anal(`
+"ae"
+label again:
+menu:
+    "choice 1":
+        "ae"
+    "choice 2":
+        "xxx"
+        jump again
+    "choice 3":
+        return False # deadend
+"abde"
+`)).toEqual([8, 11]);
+    });
 });
