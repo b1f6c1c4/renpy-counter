@@ -97,6 +97,7 @@ const argv = require('yargs')
 debug(argv);
 
 const Pause = Symbol('(pause)');
+const Special = Symbol('(special)');
 const Scene = Symbol('(scene)');
 const Show = Symbol('(show)');
 const Narrator = Symbol('(narrator)');
@@ -129,6 +130,10 @@ function parser(line) {
     if (m && argv.pause) {
         return {pause: +m.groups.t / 60};
     }
+    m = line.match(/^# renpy-counter\s+(?<t>[0-9]*(?:\.[0-9]*)?)\s*$/);
+    if (m) {
+        return {special: +m.groups.t};
+    }
     if (/^scene\s+/.test(line)) {
         return {scene: 1};
     }
@@ -142,6 +147,7 @@ function aggregator(tx) {
     const timeMap = new Map();
     if (argv.pause)
         timeMap.set(Pause, 0);
+    timeMap.set(Special, 0);
     timeMap.set(Scene, 0);
     timeMap.set(Show, 0);
     const cjkRe = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g;
@@ -149,6 +155,9 @@ function aggregator(tx) {
         if (txe.pause) {
             time += txe.pause;
             timeMap.increment(Pause, txe.pause);
+        } else if (txe.special) {
+            time += txe.special;
+            timeMap.increment(Special, txe.special);
         } else if (txe.scene) {
             time += argv.scene / 60;
             timeMap.increment(Scene, argv.scene / 60);
